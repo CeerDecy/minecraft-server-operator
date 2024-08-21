@@ -1,0 +1,18 @@
+apiVersion: minecraft-server.ceerdecy.com/v1
+kind: McServer
+metadata:
+  labels:
+    app.kubernetes.io/name: minecraft-server-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: mcserver-sample
+spec:
+  image: registry.cn-hangzhou.aliyuncs.com/ceerdecy/minecraft-server:1.20.3
+  version: "1.20.0"
+  storageSize: 4Gi
+  storageClassName: dice-local-volume
+  resources:
+    limits:
+      cpu: "2"
+    requests:
+      cpu: "1"
+      memory: 2Gi
