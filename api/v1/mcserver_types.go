@@ -38,6 +38,8 @@ type McServerSpec struct {
 	StorageClassName string `json:"storageClassName,omitempty"`
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
+
+	ServerProperties corev1.ConfigMap `json:"serverProperties,omitempty"`
 }
 
 // McServerStatus defines the observed state of McServer

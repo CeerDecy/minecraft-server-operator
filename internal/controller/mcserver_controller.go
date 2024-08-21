@@ -18,12 +18,15 @@ package controller
 
 import (
 	"context"
+	"io"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	"os"
+	"path/filepath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -75,6 +78,17 @@ func (r *McServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mc-server-default-properties",
+		},
+	}
+
+	_, err = ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		buildDefaultConfigMap(&mcServer, cm)
+		return ctrl.SetControllerReference(&mcServer, cm, r.Scheme)
+	})
+
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mcServer.Name,
@@ -96,6 +110,21 @@ func (r *McServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	logger.Info("end reconcile")
 
 	return result, nil
+}
+
+func buildDefaultConfigMap(mc *minecraftserverv1.McServer, cm *corev1.ConfigMap) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	configPath := filepath.Join(dir, "config/minecraft/server.properties")
+	bytes, err := os.Open(configPath)
+	if err != nil {
+		return err
+	}
+	properties, err := io.ReadAll(bytes)
+	cm.Data["server.properties"] = string(properties)
+	return nil
 }
 
 func buildService(mc *minecraftserverv1.McServer) *corev1.Service {
