@@ -39,7 +39,7 @@ type McServerSpec struct {
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
 
-	ServerProperties corev1.ConfigMap `json:"serverProperties,omitempty"`
+	Configs Configs `json:"configs,omitempty"`
 }
 
 // McServerStatus defines the observed state of McServer
@@ -52,6 +52,9 @@ type McServerStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // McServer is the Schema for the mcservers API
 type McServer struct {
@@ -77,6 +80,11 @@ type McServerList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []McServer `json:"items"`
+}
+
+type Configs struct {
+	// set a config map for `server.properties`
+	Properties string `json:"properties,omitempty"`
 }
 
 func init() {

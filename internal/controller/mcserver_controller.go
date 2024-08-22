@@ -36,6 +36,12 @@ import (
 
 var PersistentVolumeFilesystem = corev1.PersistentVolumeFilesystem
 
+const (
+	PropertiesConfig               = "properties-config"
+	DefaultPropertiesConfigMapName = "mc-server-default-properties"
+	ServerStatusImage              = "registry.cn-hangzhou.aliyuncs.com/ceerdecy/minecraft-server:statuser-1.0.0"
+)
+
 // McServerReconciler reconciles a McServer object
 type McServerReconciler struct {
 	client.Client
@@ -80,14 +86,23 @@ func (r *McServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "mc-server-default-properties",
+			Name:      "mc-server-default-properties",
+			Namespace: req.Namespace,
 		},
 	}
 
 	_, err = ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
-		buildDefaultConfigMap(&mcServer, cm)
+		err := buildDefaultConfigMap(&mcServer, cm)
+		if err != nil {
+			return err
+		}
 		return ctrl.SetControllerReference(&mcServer, cm, r.Scheme)
 	})
+
+	if err != nil {
+		logger.Error(err, "failed to create mcServer")
+		return ctrl.Result{}, err
+	}
 
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -97,15 +112,36 @@ func (r *McServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	_, err = ctrl.CreateOrUpdate(ctx, r.Client, sts, func() error {
-		buildStatefulSet(&mcServer, sts)
+		err := buildStatefulSet(&mcServer, sts)
+		if err != nil {
+			return err
+		}
 		return ctrl.SetControllerReference(&mcServer, sts, r.Scheme)
 	})
 
-	svc := buildService(&mcServer)
+	if err != nil {
+		logger.Error(err, "failed to create mcServer")
+		return ctrl.Result{}, err
+	}
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mcServer.Name + "-service",
+			Namespace: mcServer.Namespace,
+		},
+	}
 
 	_, err = ctrl.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		err := buildService(&mcServer, svc)
+		if err != nil {
+			return err
+		}
 		return ctrl.SetControllerReference(&mcServer, svc, r.Scheme)
 	})
+	if err != nil {
+		logger.Error(err, "failed to create mcServer")
+		return ctrl.Result{}, err
+	}
 
 	logger.Info("end reconcile")
 
@@ -123,17 +159,32 @@ func buildDefaultConfigMap(mc *minecraftserverv1.McServer, cm *corev1.ConfigMap)
 		return err
 	}
 	properties, err := io.ReadAll(bytes)
-	cm.Data["server.properties"] = string(properties)
+	cm.Data = map[string]string{
+		"server.properties": string(properties),
+	}
 	return nil
 }
 
-func buildService(mc *minecraftserverv1.McServer) *corev1.Service {
-	var svc corev1.Service
-
-	return &svc
+func buildService(mc *minecraftserverv1.McServer, svc *corev1.Service) error {
+	selectorLabels := mc.NewLabels()
+	svc.Spec = corev1.ServiceSpec{
+		Ports: []corev1.ServicePort{
+			{
+				Name: "server-port",
+				Port: 25565,
+			},
+			{
+				Name: "status-port",
+				Port: 25566,
+			},
+		},
+		Selector: selectorLabels,
+		Type:     corev1.ServiceTypeClusterIP,
+	}
+	return nil
 }
 
-func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) error {
 	labels := mc.NewLabels()
 	podLabels := make(map[string]string, len(labels)+len(mc.Labels))
 
@@ -141,11 +192,15 @@ func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *
 		podLabels[k] = v
 	}
 
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+
 	sts.Spec = appsv1.StatefulSetSpec{
 		ServiceName: mc.Name,
 		Replicas:    ptr.To(int32(1)),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: mc.Labels,
+			MatchLabels: labels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
@@ -153,6 +208,18 @@ func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *
 				Labels:      podLabels,
 			},
 			Spec: corev1.PodSpec{
+				Volumes: []corev1.Volume{
+					{
+						Name: PropertiesConfig,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: DefaultPropertiesConfigMapName,
+								},
+							},
+						},
+					},
+				},
 				Containers: []corev1.Container{
 					{
 						Name:      "mc-server",
@@ -162,6 +229,11 @@ func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *
 							{
 								Name:      "world",
 								MountPath: "/server/world",
+							},
+							{
+								Name:      PropertiesConfig,
+								MountPath: "/server/server.properties",
+								SubPath:   "server.properties",
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -176,7 +248,7 @@ func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *
 								corev1.ResourceMemory: resource.MustParse("100Mi"),
 							},
 						},
-						Image: "registry.cn-hangzhou.aliyuncs.com/ceerdecy/minecraft-server:statuser-1.0.0",
+						Image: ServerStatusImage,
 						Ports: []corev1.ContainerPort{
 							{ContainerPort: 25566},
 						},
@@ -207,7 +279,17 @@ func buildStatefulSet(mc *minecraftserverv1.McServer, sts *appsv1.StatefulSet) *
 		},
 	}
 
-	return sts
+	// if properties ConfigMap not empty, use it
+	if mc.Spec.Configs.Properties != "" {
+		for i := range sts.Spec.Template.Spec.Volumes {
+			volume := &sts.Spec.Template.Spec.Volumes[i]
+			if volume.Name == PropertiesConfig {
+				volume.ConfigMap.Name = mc.Spec.Configs.Properties
+			}
+		}
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -216,5 +298,6 @@ func (r *McServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&minecraftserverv1.McServer{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.ConfigMap{}).
 		Complete(r)
 }
