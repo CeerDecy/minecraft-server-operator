@@ -29,16 +29,18 @@ import (
 type McServerSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	//+optional
 	Image string `json:"image,omitempty"`
-
+	//+optional
 	Version string `json:"version,omitempty"`
-
+	//+optional
 	StorageSize resource.Quantity `json:"storageSize,omitempty"`
-
+	//+optional
 	StorageClassName string `json:"storageClassName,omitempty"`
-
+	//+optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
-
+	//+optional
 	Configs Configs `json:"configs,omitempty"`
 }
 
@@ -46,8 +48,11 @@ type McServerSpec struct {
 type McServerStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	//+optional
 	Version string `json:"version,omitempty"`
-	State   string `json:"state,omitempty"`
+	//+optional
+	State string `json:"state,omitempty"`
 }
 
 // +kubebuilder:object:root=true
