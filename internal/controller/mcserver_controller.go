@@ -76,7 +76,7 @@ func (r *McServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	mcServer.Status.Version = mcServer.Spec.Version
-	mcServer.Status.State = "Running"
+	mcServer.Status.State = minecraftserverv1.StatusRunning
 
 	err = r.Status().Update(ctx, &mcServer)
 	if err != nil {
